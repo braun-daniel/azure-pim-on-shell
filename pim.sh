@@ -108,16 +108,6 @@ fuzzy_select_resource_group() {
     fi
 }
 
-convert_date() {
-    local date="$1"
-    local format="$2"
-    if [[ $(uname) == "Darwin" ]]; then
-        date -j -f "%Y-%m-%dT%H:%M:%S" "$date" +"$format"
-    else
-        date -d "$date" +"$format"
-    fi
-}
-
 main() {
     check_dependencies
     parse_arguments "$@"
@@ -142,16 +132,14 @@ main() {
     fi
 
     user_object_id=$(az ad user list --filter "mail eq '$(az account show --query user.name -o tsv)'" --query "[0].id" -o tsv)
-    start_date=$(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ")
     guid=$(uuidgen | tr '[:upper:]' '[:lower:]')
     token=$(az account get-access-token --query accessToken -o tsv)
     subscription_id=$(az account list --query "[?id=='$subscription' || name=='$subscription'].id" -o tsv)
 
-    role_eligibility_schedule_instances=$(curl -s -H "Authorization: Bearer $token" -X GET \
-        "https://management.azure.com/subscriptions/${subscription_id}/resourceGroups/${resource_group}/providers/Microsoft.Authorization/roleEligibilityScheduleInstances?api-version=2020-10-01&\$filter=asTarget()")
-
-    role_definition_id=$(jq -r --arg resource_group "$resource_group" --arg role "$role" \
-        '.value[] | select(.properties.scope | endswith($resource_group)) | select(.properties.expandedProperties.roleDefinition.displayName == $role) | .properties.expandedProperties.roleDefinition.id' <<<"$role_eligibility_schedule_instances" | awk -F'/' '{print $NF}')
+    role_definition_id=$(curl -s -H "Authorization: Bearer $token" -X GET \
+        "https://management.azure.com/subscriptions/${subscription_id}/resourceGroups/${resource_group}/providers/Microsoft.Authorization/roleEligibilityScheduleInstances?api-version=2020-10-01&\$filter=asTarget()" | \
+        jq -r --arg resource_group "$resource_group" --arg role "$role" \
+        '.value[] | select(.properties.scope | endswith($resource_group)) | select(.properties.expandedProperties.roleDefinition.displayName == $role) | .properties.expandedProperties.roleDefinition.id' | awk -F'/' '{print $NF}')
 
     justification="${message// /_}"
     data=$(cat <<EOF
@@ -162,7 +150,7 @@ main() {
         "RequestType": "SelfActivate",
         "Justification": "${justification}",
         "ScheduleInfo": {
-            "StartDateTime": "${start_date}",
+            "StartDateTime": null,
             "Expiration": {
                 "Type": "AfterDuration",
                 "EndDateTime": null,
@@ -183,11 +171,17 @@ EOF
     fi
 
     if [[ $(echo "$response" | jq -r '.properties.status') == "Provisioned" ]]; then
-        start_date_time=$(echo "$response" | jq -r '.properties.scheduleInfo.startDateTime')
-        end_date_time=$(convert_date "$start_date_time" +"%Y-%m-%dT%H:%M:%S.%3NZ + ${time//H/h} ${time//M/m} minutes")
-        end_date_formatted=$(convert_date "$end_date_time" "%d.%m.%Y - %H:%M")
-        start_date_formatted=$(convert_date "$start_date_time" "%d.%m.%Y - %H:%M")
-        echo "PIM assignment active from $start_date_formatted to $end_date_formatted"
+        duration=$(echo "$response" | jq -r '.properties.scheduleInfo.expiration.duration')
+        # Extract the numeric value from the duration string, assuming it's always in minutes for simplicity
+        minutes=$(echo "$duration" | grep -o '[0-9]\+')
+
+        # Convert minutes to seconds for the date command
+        seconds=$((minutes * 60))
+
+        # Add the duration to the current time and format the output to HH:MM
+        expiration_time=$(date -v +${seconds}S +"%H:%M")
+
+        echo "PIM assignment active. Expires: $expiration_time"
     else
         echo "An unknown error occurred."
     fi
