@@ -96,7 +96,7 @@ fuzzy_select_subscription() {
 }
 
 fuzzy_select_resource_group() {
-    resource_group=$(az group list --query "[].name" -o tsv | fzf --prompt="Select Resource Group: ")
+    resource_group=$(az group list --subscription "$subscription" --query "[].name" -o tsv | fzf --prompt="Select Resource Group: ")
     if [[ -z "$resource_group" ]]; then
         echo "No resource group selected. Exiting."
         exit 1
