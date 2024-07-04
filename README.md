@@ -21,7 +21,7 @@ Ensure the following commands are installed and accessible in your environment:
 ## Usage
 
 ```bash
-./pim.sh [OPTIONS]
+./pim [OPTIONS]
 ```
 
 ### Required Parameters
@@ -34,13 +34,12 @@ Ensure the following commands are installed and accessible in your environment:
 - `--message, -m`: Justification message
 - `--role, -r`: Role name (default: Contributor)
 - `--time, -t`: Duration (default: 8H). Format: 8H (hours) or 8M (minutes)
-- `--verbose, -v`: Enable verbose output
 - `--help`: Show help message
 
 ### Example
 
 ```bash
-./pim.sh --subscription "My Subscription" --resource-group "MyResourceGroup" --message "Access required for deployment" --role "Contributor" --time "4H" --verbose
+./pim --subscription "My Subscription" --resource-group "MyResourceGroup" --message "Access required for deployment" --role "Contributor" --time "4H" --verbose
 ```
 
 ### Fuzzy Search
@@ -52,7 +51,7 @@ If you do not provide `--subscription` or `--resource-group`, the script will in
 You can run the script without specifying `--subscription` or `--resource-group`, and you will be prompted to select them using `fzf`.
 
 ```bash
-./pim.sh
+./pim
 ```
 
 ## Example Workflow
@@ -63,7 +62,7 @@ You can run the script without specifying `--subscription` or `--resource-group`
     ```
 2. Run the script:
     ```bash
-    ./pim.sh --verbose
+    ./pim --verbose
     ```
 3. Select the subscription and resource group using `fzf`.
 4. Provide the required justification message when prompted.

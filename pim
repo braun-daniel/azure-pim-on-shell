@@ -13,7 +13,6 @@ Optional parameters:
   --message, -m           Justification message
   --role, -r              Role name (default: Contributor)
   --time, -t              Duration (default: 8H). Format: 8H (hours) or 8M (minutes)
-  --verbose, -v           Enable verbose output
   --help                  Show this help message
 EOF
     exit 1
@@ -71,9 +70,6 @@ parse_arguments() {
                 time="$2"
                 shift
                 ;;
-            -v|--verbose)
-                verbose=true
-                ;;
             --help)
                 print_help
                 ;;
@@ -88,12 +84,11 @@ parse_arguments() {
 
 set_defaults() {
     role=${role:-"Contributor"}
-    time=${time:-"8H"}
-    verbose=${verbose:-false}
+    time=${time:-"1H"}
 }
 
 fuzzy_select_subscription() {
-    subscription=$(az account list --query "[].{name:name, id:id}" -o tsv | fzf --prompt="Select Subscription: " | awk '{print $1}')
+    subscription=$(az account list --query "[].{name:name, id:id}" -o tsv | fzf --prompt="Select Subscription: " | awk '{$NF=""; print $0}' | sed 's/ $//')
     if [[ -z "$subscription" ]]; then
         echo "No subscription selected. Exiting."
         exit 1
@@ -172,14 +167,15 @@ EOF
 
     if [[ $(echo "$response" | jq -r '.properties.status') == "Provisioned" ]]; then
         duration=$(echo "$response" | jq -r '.properties.scheduleInfo.expiration.duration')
-        # Extract the numeric value from the duration string, assuming it's always in minutes for simplicity
-        minutes=$(echo "$duration" | grep -o '[0-9]\+')
-
-        # Convert minutes to seconds for the date command
-        seconds=$((minutes * 60))
-
-        # Add the duration to the current time and format the output to HH:MM
-        expiration_time=$(date -v +${seconds}S +"%H:%M")
+        if [[ $duration == *"H" ]]; then
+            # Extract hours and convert to minutes for the date command
+            hours=$(echo "$duration" | grep -o '[0-9]\+')
+            expiration_time=$(date -v +${hours}H +"%Y-%m-%d %H:%M:%S")
+        elif [[ $duration == *"M" ]]; then
+            # Extract minutes directly for the date command
+            minutes=$(echo "$duration" | grep -o '[0-9]\+')
+            expiration_time=$(date -v +${minutes}M +"%Y-%m-%d %H:%M:%S")
+        fi
 
         echo "PIM assignment active. Expires: $expiration_time"
     else
@@ -188,3 +184,4 @@ EOF
 }
 
 main "$@"
+
