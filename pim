@@ -13,7 +13,6 @@ Optional parameters:
   --message, -m           Justification message
   --role, -r              Role name (default: Contributor)
   --time, -t              Duration (default: 8H). Format: 8H (hours) or 8M (minutes)
-  --verbose, -v           Enable verbose output
   --help                  Show this help message
 EOF
     exit 1
@@ -71,9 +70,6 @@ parse_arguments() {
                 time="$2"
                 shift
                 ;;
-            -v|--verbose)
-                verbose=true
-                ;;
             --help)
                 print_help
                 ;;
@@ -89,7 +85,6 @@ parse_arguments() {
 set_defaults() {
     role=${role:-"Contributor"}
     time=${time:-"8H"}
-    verbose=${verbose:-false}
 }
 
 fuzzy_select_subscription() {
