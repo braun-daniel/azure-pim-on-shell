@@ -50,40 +50,39 @@ validate_time() {
 parse_arguments() {
     while [[ "$#" -gt 0 ]]; do
         case $1 in
-            -s|--subscription)
-                subscription="$2"
-                shift
-                ;;
-            -g|--resource-group)
-                resource_group="$2"
-                shift
-                ;;
-            -m|--message)
-                message="$2"
-                shift
-                ;;
-            -r|--role)
-                role="$2"
-                shift
-                ;;
-            -t|--time)
-                time="$2"
-                shift
-                ;;
-            --help)
-                print_help
-                ;;
-            *)
-                echo "Unknown parameter passed: $1"
-                print_help
-                ;;
+        -s | --subscription)
+            subscription="$2"
+            shift
+            ;;
+        -g | --resource-group)
+            resource_group="$2"
+            shift
+            ;;
+        -m | --message)
+            message="$2"
+            shift
+            ;;
+        -r | --role)
+            role="$2"
+            shift
+            ;;
+        -t | --time)
+            time="$2"
+            shift
+            ;;
+        --help)
+            print_help
+            ;;
+        *)
+            echo "Unknown parameter passed: $1"
+            print_help
+            ;;
         esac
         shift
     done
 }
 
 set_defaults() {
-    role=${role:-"Contributor"}
     time=${time:-"1H"}
 }
 
@@ -103,6 +102,17 @@ fuzzy_select_resource_group() {
     fi
 }
 
+fuzzy_select_role() {
+    roles=$(curl -s -H "Authorization: Bearer $token" -X GET \
+        "https://management.azure.com/subscriptions/${subscription_id}/resourceGroups/${resource_group}/providers/Microsoft.Authorization/roleEligibilityScheduleInstances?api-version=2020-10-01&\$filter=asTarget()" |
+        jq -r '.value[].properties.expandedProperties.roleDefinition.displayName' | sort -u)
+    role=$(echo "$roles" | fzf --prompt="Select Role: ")
+    if [[ -z "$role" ]]; then
+        echo "No role selected. Exiting."
+        exit 1
+    fi
+}
+
 main() {
     check_dependencies
     parse_arguments "$@"
@@ -118,6 +128,20 @@ main() {
 
     validate_time
 
+    user_object_id=$(az ad user list --filter "mail eq '$(az account show --query user.name -o tsv)'" --query "[0].id" -o tsv)
+    guid=$(uuidgen | tr '[:upper:]' '[:lower:]')
+    token=$(az account get-access-token --query accessToken -o tsv)
+    subscription_id=$(az account list --query "[?id=='$subscription' || name=='$subscription'].id" -o tsv)
+
+    if [[ -z "$role" ]]; then
+        fuzzy_select_role
+    fi
+
+    role_definition_id=$(curl -s -H "Authorization: Bearer $token" -X GET \
+        "https://management.azure.com/subscriptions/${subscription_id}/resourceGroups/${resource_group}/providers/Microsoft.Authorization/roleEligibilityScheduleInstances?api-version=2020-10-01&\$filter=asTarget()" |
+        jq -r --arg resource_group "$resource_group" --arg role "$role" \
+            '.value[] | select(.properties.scope | endswith($resource_group)) | select(.properties.expandedProperties.roleDefinition.displayName == $role) | .properties.expandedProperties.roleDefinition.id' | awk -F'/' '{print $NF}')
+
     if [[ -z "$message" ]]; then
         read -p "Please provide a justification message: " message
         if [[ -z "$message" ]]; then
@@ -126,18 +150,9 @@ main() {
         fi
     fi
 
-    user_object_id=$(az ad user list --filter "mail eq '$(az account show --query user.name -o tsv)'" --query "[0].id" -o tsv)
-    guid=$(uuidgen | tr '[:upper:]' '[:lower:]')
-    token=$(az account get-access-token --query accessToken -o tsv)
-    subscription_id=$(az account list --query "[?id=='$subscription' || name=='$subscription'].id" -o tsv)
-
-    role_definition_id=$(curl -s -H "Authorization: Bearer $token" -X GET \
-        "https://management.azure.com/subscriptions/${subscription_id}/resourceGroups/${resource_group}/providers/Microsoft.Authorization/roleEligibilityScheduleInstances?api-version=2020-10-01&\$filter=asTarget()" | \
-        jq -r --arg resource_group "$resource_group" --arg role "$role" \
-        '.value[] | select(.properties.scope | endswith($resource_group)) | select(.properties.expandedProperties.roleDefinition.displayName == $role) | .properties.expandedProperties.roleDefinition.id' | awk -F'/' '{print $NF}')
-
     justification="${message// /_}"
-    data=$(cat <<EOF
+    data=$(
+        cat <<EOF
 {
     "Properties": {
         "RoleDefinitionId": "/subscriptions/${subscription_id}/providers/Microsoft.Authorization/roleDefinitions/${role_definition_id}",
@@ -184,4 +199,3 @@ EOF
 }
 
 main "$@"
-

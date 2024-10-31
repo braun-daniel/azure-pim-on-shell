@@ -1,4 +1,3 @@
-
 # PIM Assignment Script
 
 This script automates the process of making Privileged Identity Management (PIM) assignments in Azure. It leverages `fzf` for fuzzy searching subscription names and resource group names for user convenience.
@@ -24,48 +23,24 @@ Ensure the following commands are installed and accessible in your environment:
 ./pim [OPTIONS]
 ```
 
-### Required Parameters
+### Parameters
 
 - `--subscription, -s`: Subscription ID or name (fuzzy search enabled)
 - `--resource-group, -g`: Resource group name (fuzzy search enabled)
-
-### Optional Parameters
-
 - `--message, -m`: Justification message
-- `--role, -r`: Role name (default: Contributor)
-- `--time, -t`: Duration (default: 8H). Format: 8H (hours) or 8M (minutes)
+- `--role, -r`: Role name (fuzzy search enabled)
+- `--time, -t`: Duration (default: 1H). Format: 8H (hours) or 8M (minutes)
 - `--help`: Show help message
 
 ### Example
 
 ```bash
-./pim --subscription "My Subscription" --resource-group "MyResourceGroup" --message "Access required for deployment" --role "Contributor" --time "4H" --verbose
+./pim --subscription "My Subscription" --resource-group "MyResourceGroup" --message "Access required for deployment" --role "Contributor" --time "4H"
 ```
 
 ### Fuzzy Search
 
-If you do not provide `--subscription` or `--resource-group`, the script will invoke `fzf` to let you select from available options.
-
-### Running Without Parameters
-
-You can run the script without specifying `--subscription` or `--resource-group`, and you will be prompted to select them using `fzf`.
-
-```bash
-./pim
-```
-
-## Example Workflow
-
-1. Ensure you are logged into Azure CLI:
-    ```bash
-    az login
-    ```
-2. Run the script:
-    ```bash
-    ./pim --verbose
-    ```
-3. Select the subscription and resource group using `fzf`.
-4. Provide the required justification message when prompted.
+If you do not provide `--subscription`, `--resource-group` or `--role`, the script will invoke `fzf` to let you select from available options.
 
 ## Error Handling
 
