@@ -184,11 +184,25 @@ EOF
         if [[ $duration == *"H" ]]; then
             # Extract hours and convert to minutes for the date command
             hours=$(echo "$duration" | grep -o '[0-9]\+')
-            expiration_time=$(date -v +${hours}H +"%Y-%m-%d %H:%M:%S")
+
+            # fixes issue #5
+            if [[ "$OSTYPE" == "darwin"* ]]; then
+                expiration_time=$(date -v +${hours}H +"%Y-%m-%d %H:%M:%S")
+            else
+                expiration_time=$(date -d "+${hours} hours" +"%Y-%m-%d %H:%M:%S")
+            fi
+
         elif [[ $duration == *"M" ]]; then
             # Extract minutes directly for the date command
             minutes=$(echo "$duration" | grep -o '[0-9]\+')
-            expiration_time=$(date -v +${minutes}M +"%Y-%m-%d %H:%M:%S")
+
+            # fixes issue #5
+            if [[ "$OSTYPE" == "darwin"* ]]; then
+                expiration_time=$(date -v +${minutes}M +"%Y-%m-%d %H:%M:%S")
+            else
+                expiration_time=$(date -d "+${minutes} minutes" +"%Y-%m-%d %H:%M:%S")
+            fi
+        
         fi
 
         echo "PIM assignment active. Expires: $expiration_time"
