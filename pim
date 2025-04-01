@@ -82,7 +82,6 @@ parse_arguments() {
     done
 }
 
-
 fuzzy_select_subscription() {
     subscription=$(az account list --query "[].{name:name, id:id}" -o tsv | fzf --prompt="Select Subscription: " | awk '{$NF=""; print $0}' | sed 's/ $//')
     if [[ -z "$subscription" ]]; then
@@ -122,7 +121,7 @@ main() {
         fuzzy_select_resource_group
     fi
 
-    user_object_id=$(az ad user list --filter "mail eq '$(az account show --query user.name -o tsv)'" --query "[0].id" -o tsv)
+    user_object_id=$(az ad user list --filter "UserPrincipalName eq '$(az account show --query user.name -o tsv)'" --query "[0].id" -o tsv)
     guid=$(uuidgen | tr '[:upper:]' '[:lower:]')
     token=$(az account get-access-token --query accessToken -o tsv)
     subscription_id=$(az account list --query "[?id=='$subscription' || name=='$subscription'].id" -o tsv)
@@ -138,9 +137,9 @@ main() {
 
     if [[ -z "$time" ]]; then
         read -p "Please provide duration time (default: 1H, if empty). Format: 8H (hours) or 5M (minutes): " time
-    	time=${time:-"1H"}
+        time=${time:-"1H"}
     fi
-	validate_time
+    validate_time
     if [[ -z "$message" ]]; then
         read -p "Please provide a justification message: " message
         if [[ -z "$message" ]]; then
@@ -202,7 +201,7 @@ EOF
             else
                 expiration_time=$(date -d "+${minutes} minutes" +"%Y-%m-%d %H:%M:%S")
             fi
-        
+
         fi
 
         echo "PIM assignment active. Expires: $expiration_time"
