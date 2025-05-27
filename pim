@@ -121,7 +121,8 @@ main() {
         fuzzy_select_resource_group
     fi
 
-    user_object_id=$(az ad user list --filter "UserPrincipalName eq '$(az account show --query user.name -o tsv)'" --query "[0].id" -o tsv)
+    upn=$(az ad signed-in-user show --query userPrincipalName --output tsv)
+    user_object_id=$(az ad user list --filter "UserPrincipalName eq '$upn'" --query "[0].id" -o tsv)
     guid=$(uuidgen | tr '[:upper:]' '[:lower:]')
     token=$(az account get-access-token --query accessToken -o tsv)
     subscription_id=$(az account list --query "[?id=='$subscription' || name=='$subscription'].id" -o tsv)
