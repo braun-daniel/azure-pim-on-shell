@@ -1,21 +1,16 @@
-# PIM Assignment Script
+# Azure PIM Assignment Shell Tool
 
-This script automates the process of making Privileged Identity Management (PIM) assignments in Azure. It leverages `fzf` for fuzzy searching subscription names and resource group names for user convenience.
+Automate Azure Privileged Identity Management (PIM) assignments for both Azure resource and Entra ID (Azure AD) roles—much faster than the Azure Portal. Fuzzy search and interactive prompts make role activation quick and user-friendly.
 
-## Features
+## Why use this tool?
 
-- Fuzzy search for subscription names and resource group names using `fzf`
-- Customizable role assignments with duration and justification messages
-- Supports verbose output for detailed operation logs
+> `pim` on the shell is significantly faster than the Azure Portal. Search, select, and activate roles in seconds—ideal for power users and automation.
 
 ## Prerequisites
 
-Ensure the following commands are installed and accessible in your environment:
+Install and ensure these are in your PATH:
 
-- `curl`
-- `az` (Azure CLI)
-- `jq`
-- `fzf`
+- `curl`, `az` (Azure CLI), `jq`, `fzf`, `pwsh` (for Entra ID roles)
 
 ## Usage
 
@@ -23,28 +18,36 @@ Ensure the following commands are installed and accessible in your environment:
 ./pim [OPTIONS]
 ```
 
-### Parameters
+### Parameters (all can be prompted)
 
-- `--subscription, -s`: Subscription ID or name (fuzzy search enabled)
-- `--resource-group, -g`: Resource group name (fuzzy search enabled)
-- `--message, -m`: Justification message
-- `--role, -r`: Role name (fuzzy search enabled)
-- `--time, -t`: Duration (default: 1H). Format: 8H (hours) or 8M (minutes)
-- `--help`: Show help message
+- `--subscription, -s` Subscription ID or name
+- `--resource-group, -g` Resource group name
+- `--role, -r` Role name
+- `--message, -m` Justification message
+- `--time, -t` Duration (`nH` 1-8 or `nM` 5-60)
+- `--entra, -e` Request Entra ID (Azure AD) role (ignores sub/rg)
+- `--help` Show help
 
-### Example
+If any parameter is omitted, you'll be prompted (with fuzzy search for sub/rg/role).
+
+### Examples
+
+Entra ID role:
 
 ```bash
-./pim --subscription "My Subscription" --resource-group "MyResourceGroup" --message "Access required for deployment" --role "Contributor" --time "4H"
+./pim --entra --role "Global Administrator" --time 1H --message "Emergency access"
 ```
 
-### Fuzzy Search
+Azure resource role:
 
-If you do not provide `--subscription`, `--resource-group` or `--role`, the script will invoke `fzf` to let you select from available options.
+```bash
+./pim --subscription "My Subscription" --resource-group "MyResourceGroup" --role "Contributor" --time 4H --message "Access required for deployment"
+```
 
-## Error Handling
+## Implementation
 
-The script performs various checks and provides meaningful error messages for missing dependencies, invalid input formats, and operational errors.
+- Main logic: `pim` (Bash)
+- Entra ID support: `pim_entra.ps1` (PowerShell, Microsoft Graph SDK)
 
 ## Contribution
 
@@ -52,4 +55,4 @@ Contributions are welcome! Please fork the repository and create a pull request 
 
 ## License
 
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+MIT License. See [LICENSE](LICENSE).

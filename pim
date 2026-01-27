@@ -13,6 +13,7 @@ Optional parameters:
   --message, -m           Justification message
   --role, -r              Role name (will be prompted if not provided)
   --time, -t              Duration (will be prompted if not provided)
+  --entra, -e             Request Entra ID role (subscription and resource group are ignored)
   --help                  Show this help message
 EOF
     exit 1
@@ -25,6 +26,12 @@ check_dependencies() {
             exit 1
         fi
     done
+    if [[ "$is_entra" == "true" ]]; then
+        if ! command -v pwsh &>/dev/null; then
+             echo "pwsh (PowerShell) is required for Entra ID support but not installed. Exiting."
+             exit 1
+        fi
+    fi
 }
 
 validate_time() {
@@ -70,6 +77,9 @@ parse_arguments() {
             time="$2"
             shift
             ;;
+        -e | --entra)
+            is_entra=true
+            ;;
         --help)
             print_help
             ;;
@@ -96,6 +106,55 @@ fuzzy_select_resource_group() {
         echo "No resource group selected. Exiting."
         exit 1
     fi
+    if [[ -z "$resource_group" ]]; then
+        echo "No resource group selected. Exiting."
+        exit 1
+    fi
+}
+
+
+
+get_entra_role_eligibilities() {
+    # Check for pwsh first
+    if ! command -v pwsh &>/dev/null; then
+         echo "pwsh (PowerShell) is required for Entra ID support."
+         exit 1
+    fi
+
+    local script_dir="$(dirname "$0")"
+    local ps_script="$script_dir/pim_entra.ps1"
+    
+    # Check if helper script exists
+    if [[ ! -f "$ps_script" ]]; then
+        echo "Error: Helper script pim_entra.ps1 not found in $script_dir"
+        exit 1
+    fi
+
+    json_output=$(pwsh -NoProfile -File "$ps_script" -Operation "List")
+    
+    if [[ $? -ne 0 ]]; then
+        echo "Error listing Entra roles via PowerShell:"
+        echo "$json_output"
+        exit 1
+    fi
+     entra_roles_json="$json_output"
+}
+
+
+fuzzy_select_entra_role() {
+    # Extract role names
+    roles=$(echo "$entra_roles_json" | jq -r '.[] | .RoleName' | sort -u)
+    
+    if [[ -z "$roles" ]]; then
+        echo "No eligible Entra ID roles found."
+        exit 1
+    fi
+
+    role=$(echo "$roles" | fzf --prompt="Select Role: ")
+    if [[ -z "$role" ]]; then
+        echo "No role selected. Exiting."
+        exit 1
+    fi
 }
 
 fuzzy_select_role() {
@@ -113,28 +172,39 @@ main() {
     check_dependencies
     parse_arguments "$@"
 
-    if [[ -z "$subscription" ]]; then
-        fuzzy_select_subscription
+    if [[ "$is_entra" == "true" ]]; then
+        get_entra_role_eligibilities
+
+        if [[ -z "$role" ]]; then
+            fuzzy_select_entra_role
+        fi
+        
+        # Resolve ID from the JSON
+        role_entry=$(echo "$entra_roles_json" | jq -r --arg role "$role" '.[] | select(.RoleName == $role)')
+        role_definition_id=$(echo "$role_entry" | jq -r '.RoleDefinitionId')
+        directory_scope_id=$(echo "$role_entry" | jq -r '.DirectoryScopeId')
+
+    else
+        if [[ -z "$subscription" ]]; then
+            fuzzy_select_subscription
+        fi
+    
+        if [[ -z "$resource_group" ]]; then
+            fuzzy_select_resource_group
+        fi
+
+        token=$(az account get-access-token --query accessToken -o tsv)
+        subscription_id=$(az account list --query "[?id=='$subscription' || name=='$subscription'].id" -o tsv)
+
+        if [[ -z "$role" ]]; then
+            fuzzy_select_role
+        fi
+
+        role_definition_id=$(curl -s -H "Authorization: Bearer $token" -X GET \
+            "https://management.azure.com/subscriptions/${subscription_id}/resourceGroups/${resource_group}/providers/Microsoft.Authorization/roleEligibilityScheduleInstances?api-version=2020-10-01&\$filter=asTarget()" |
+            jq -r --arg resource_group "$resource_group" --arg role "$role" \
+                '.value[] | select(.properties.scope | endswith($resource_group)) | select(.properties.expandedProperties.roleDefinition.displayName == $role) | .properties.expandedProperties.roleDefinition.id' | awk -F'/' '{print $NF}')
     fi
-
-    if [[ -z "$resource_group" ]]; then
-        fuzzy_select_resource_group
-    fi
-
-    upn=$(az ad signed-in-user show --query userPrincipalName --output tsv)
-    user_object_id=$(az ad user list --filter "UserPrincipalName eq '$upn'" --query "[0].id" -o tsv)
-    guid=$(uuidgen | tr '[:upper:]' '[:lower:]')
-    token=$(az account get-access-token --query accessToken -o tsv)
-    subscription_id=$(az account list --query "[?id=='$subscription' || name=='$subscription'].id" -o tsv)
-
-    if [[ -z "$role" ]]; then
-        fuzzy_select_role
-    fi
-
-    role_definition_id=$(curl -s -H "Authorization: Bearer $token" -X GET \
-        "https://management.azure.com/subscriptions/${subscription_id}/resourceGroups/${resource_group}/providers/Microsoft.Authorization/roleEligibilityScheduleInstances?api-version=2020-10-01&\$filter=asTarget()" |
-        jq -r --arg resource_group "$resource_group" --arg role "$role" \
-            '.value[] | select(.properties.scope | endswith($resource_group)) | select(.properties.expandedProperties.roleDefinition.displayName == $role) | .properties.expandedProperties.roleDefinition.id' | awk -F'/' '{print $NF}')
 
     if [[ -z "$time" ]]; then
         read -p "Please provide duration time (default: 1H, if empty). Format: 8H (hours) or 5M (minutes): " time
@@ -150,8 +220,30 @@ main() {
     fi
 
     justification="${message// /_}"
-    data=$(
-        cat <<EOF
+
+    if [[ "$is_entra" == "true" ]]; then
+        local script_dir="$(dirname "$0")"
+        local ps_script="$script_dir/pim_entra.ps1"
+
+        output=$(pwsh -NoProfile -File "$ps_script" \
+            -Operation "Activate" \
+            -RoleDefinitionId "$role_definition_id" \
+            -DirectoryScopeId "$directory_scope_id" \
+            -Justification "$justification" \
+            -Duration "$time")
+        
+        if [[ $? -ne 0 ]]; then
+            echo "Failed to activate Entra ID role via PowerShell."
+            echo "$output"
+            exit 1
+        fi
+        
+        echo "PIM assignment request submitted successfully."
+        # Not calculating expiration for Entra yet as it returns async
+        exit 0
+    else
+        data=$(
+            cat <<EOF
 {
     "Properties": {
         "RoleDefinitionId": "/subscriptions/${subscription_id}/providers/Microsoft.Authorization/roleDefinitions/${role_definition_id}",
@@ -169,10 +261,11 @@ main() {
     }
 }
 EOF
-    )
+        )
 
-    response=$(curl -s -H "Authorization: Bearer $token" -X PUT -H "Content-Type: application/json" -d "$data" \
-        "https://management.azure.com/subscriptions/${subscription_id}/resourceGroups/${resource_group}/providers/Microsoft.Authorization/roleAssignmentScheduleRequests/${guid}?api-version=2020-10-01")
+        response=$(curl -s -H "Authorization: Bearer $token" -X PUT -H "Content-Type: application/json" -d "$data" \
+            "https://management.azure.com/subscriptions/${subscription_id}/resourceGroups/${resource_group}/providers/Microsoft.Authorization/roleAssignmentScheduleRequests/${guid}?api-version=2020-10-01")
+    fi
 
     if [[ $(echo "$response" | jq -r '.error') != "null" ]]; then
         echo "Error: $(echo "$response" | jq -r '.error.message')"
