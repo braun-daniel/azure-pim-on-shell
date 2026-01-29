@@ -242,6 +242,9 @@ main() {
         # Not calculating expiration for Entra yet as it returns async
         exit 0
     else
+        guid=$(uuidgen | tr '[:upper:]' '[:lower:]')
+        upn=$(az ad signed-in-user show --query userPrincipalName --output tsv)
+        user_object_id=$(az ad user list --filter "UserPrincipalName eq '$upn'" --query "[0].id" -o tsv)
         data=$(
             cat <<EOF
 {
